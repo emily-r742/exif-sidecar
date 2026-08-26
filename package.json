@@ -1,0 +1,16 @@
+{
+  "name": "exif-sidecar",
+  "version": "0.1.0",
+  "description": "Convert JPEG EXIF metadata to and from a plain JSON sidecar format",
+  "type": "module",
+  "license": "MIT",
+  "main": "dist/exif.js",
+  "types": "dist/exif.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {}
+}
