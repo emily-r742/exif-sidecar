@@ -20,8 +20,7 @@ There are two representations:
 
 ```ts
 import { readFileSync } from 'node:fs';
-import { parseJpegExif } from './src/exif.js';
-import { exifToSidecar, sidecarToExif } from './src/sidecar.js';
+import { parseJpegExif, exifToSidecar, sidecarToExif } from './src/index.js';
 
 const bytes = readFileSync('photo.jpg');
 const exif = parseJpegExif(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));

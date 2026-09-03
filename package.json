@@ -4,8 +4,8 @@
   "description": "Convert JPEG EXIF metadata to and from a plain JSON sidecar format",
   "type": "module",
   "license": "MIT",
-  "main": "dist/exif.js",
-  "types": "dist/exif.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "files": [
     "dist"
   ],
