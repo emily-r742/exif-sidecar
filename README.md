@@ -55,6 +55,13 @@ parsing and conversion logic straightforward to unit test — no fixture
 files on disk required, just byte arrays and plain objects built in the
 test itself.
 
+## Tests
+
+`npm test` runs the `node:test` suite in `test/`. It builds synthetic JPEG
+byte arrays by hand (no fixture files) to exercise the EXIF parser, and
+checks that `exifToSidecar` / `sidecarToExif` round-trip without losing
+data.
+
 ## Current limitations
 
 This is an early skeleton. Known gaps, in the order I plan to close
