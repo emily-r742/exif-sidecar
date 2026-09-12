@@ -19,6 +19,7 @@ const TAG_TYPE_SIZES: Record<number, number> = {
 };
 
 const EXIF_IFD_POINTER = 0x8769;
+const GPS_IFD_POINTER = 0x8825;
 
 function readTagValue(
   view: DataView,
@@ -28,6 +29,11 @@ function readTagValue(
   little: boolean,
 ): TagValue | undefined {
   switch (type) {
+    case 1: {
+      // BYTE — used by GPSAltitudeRef, which is the only field we read
+      // that has this type.
+      return view.getUint8(offset);
+    }
     case 2: {
       // ASCII, NUL-terminated; TIFF stores the terminator inside `count`.
       const chars: number[] = [];
@@ -47,7 +53,19 @@ function readTagValue(
       return view.getUint32(offset, little);
     }
     case 5: {
-      // RATIONAL
+      // RATIONAL. GPS latitude/longitude store three of these
+      // (degrees, minutes, seconds) in one entry; every other field
+      // we read stores exactly one.
+      if (count > 1) {
+        const rationals: Rational[] = [];
+        for (let i = 0; i < count; i++) {
+          rationals.push({
+            numerator: view.getUint32(offset + i * 8, little),
+            denominator: view.getUint32(offset + i * 8 + 4, little),
+          });
+        }
+        return rationals;
+      }
       return {
         numerator: view.getUint32(offset, little),
         denominator: view.getUint32(offset + 4, little),
@@ -89,7 +107,7 @@ function readIfd(
 function parseTiff(
   view: DataView,
   tiffStart: number,
-): { ifd0: Map<number, TagValue>; exifIfd: Map<number, TagValue> } {
+): { ifd0: Map<number, TagValue>; exifIfd: Map<number, TagValue>; gpsIfd: Map<number, TagValue> } {
   const byteOrderMark = view.getUint16(tiffStart, false);
   const little = byteOrderMark === 0x4949; // "II"; "MM" is big-endian
 
@@ -100,7 +118,11 @@ function parseTiff(
   const exifIfd =
     typeof exifIfdPointer === 'number' ? readIfd(view, tiffStart, exifIfdPointer, little) : new Map();
 
-  return { ifd0, exifIfd };
+  const gpsIfdPointer = ifd0.get(GPS_IFD_POINTER);
+  const gpsIfd =
+    typeof gpsIfdPointer === 'number' ? readIfd(view, tiffStart, gpsIfdPointer, little) : new Map();
+
+  return { ifd0, exifIfd, gpsIfd };
 }
 
 // Walks JPEG markers looking for the APP1 segment that carries an
@@ -142,10 +164,18 @@ function findTiffStart(view: DataView): number | undefined {
 }
 
 function isRational(value: TagValue | undefined): value is Rational {
-  return typeof value === 'object' && value !== null && 'numerator' in value;
+  return typeof value === 'object' && value !== null && !Array.isArray(value) && 'numerator' in value;
 }
 
-function buildExifData(ifd0: Map<number, TagValue>, exifIfd: Map<number, TagValue>): ExifData {
+function isRationalArray(value: TagValue | undefined): value is Rational[] {
+  return Array.isArray(value);
+}
+
+function buildExifData(
+  ifd0: Map<number, TagValue>,
+  exifIfd: Map<number, TagValue>,
+  gpsIfd: Map<number, TagValue>,
+): ExifData {
   const data: ExifData = {};
 
   const make = ifd0.get(0x010f);
@@ -178,6 +208,19 @@ function buildExifData(ifd0: Map<number, TagValue>, exifIfd: Map<number, TagValu
   const pixelYDimension = exifIfd.get(0xa003);
   if (typeof pixelYDimension === 'number') data.pixelYDimension = pixelYDimension;
 
+  const gpsLatitudeRef = gpsIfd.get(0x0001);
+  if (typeof gpsLatitudeRef === 'string') data.gpsLatitudeRef = gpsLatitudeRef;
+  const gpsLatitude = gpsIfd.get(0x0002);
+  if (isRationalArray(gpsLatitude)) data.gpsLatitude = gpsLatitude;
+  const gpsLongitudeRef = gpsIfd.get(0x0003);
+  if (typeof gpsLongitudeRef === 'string') data.gpsLongitudeRef = gpsLongitudeRef;
+  const gpsLongitude = gpsIfd.get(0x0004);
+  if (isRationalArray(gpsLongitude)) data.gpsLongitude = gpsLongitude;
+  const gpsAltitudeRef = gpsIfd.get(0x0005);
+  if (typeof gpsAltitudeRef === 'number') data.gpsAltitudeRef = gpsAltitudeRef;
+  const gpsAltitude = gpsIfd.get(0x0006);
+  if (isRational(gpsAltitude)) data.gpsAltitude = gpsAltitude;
+
   return data;
 }
 
@@ -188,6 +231,6 @@ export function parseJpegExif(bytes: Uint8Array): ExifData | null {
   const tiffStart = findTiffStart(view);
   if (tiffStart === undefined) return null;
 
-  const { ifd0, exifIfd } = parseTiff(view, tiffStart);
-  return buildExifData(ifd0, exifIfd);
+  const { ifd0, exifIfd, gpsIfd } = parseTiff(view, tiffStart);
+  return buildExifData(ifd0, exifIfd, gpsIfd);
 }

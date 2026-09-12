@@ -23,6 +23,31 @@ export function numberToRational(value: number): Rational {
   return { numerator: numerator / divisor, denominator: denominator / divisor };
 }
 
+// Converts a GPS degrees/minutes/seconds triplet plus a hemisphere
+// reference ("N"/"S"/"E"/"W") to signed decimal degrees.
+function dmsToDecimal(dms: Rational[], ref: string): number | undefined {
+  if (dms.length !== 3) return undefined;
+  const [degrees, minutes, seconds] = dms.map(rationalToNumber);
+  const magnitude = degrees + minutes / 60 + seconds / 3600;
+  return ref === 'S' || ref === 'W' ? -magnitude : magnitude;
+}
+
+// Inverse of dmsToDecimal: splits signed decimal degrees into a
+// degrees/minutes/seconds triplet. The sign itself is carried by the
+// hemisphere reference, not the triplet.
+function decimalToDms(value: number): Rational[] {
+  const magnitude = Math.abs(value);
+  const degrees = Math.floor(magnitude);
+  const minutesFull = (magnitude - degrees) * 60;
+  const minutes = Math.floor(minutesFull);
+  const seconds = (minutesFull - minutes) * 60;
+  return [
+    { numerator: degrees, denominator: 1 },
+    { numerator: minutes, denominator: 1 },
+    numberToRational(seconds),
+  ];
+}
+
 const EXIF_DATE_PATTERN = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/;
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/;
 
@@ -83,6 +108,21 @@ export function exifToSidecar(exif: ExifData): SidecarRecord {
     };
   }
 
+  if (exif.gpsLatitude !== undefined && exif.gpsLongitude !== undefined) {
+    const latitude = dmsToDecimal(exif.gpsLatitude, exif.gpsLatitudeRef ?? 'N');
+    const longitude = dmsToDecimal(exif.gpsLongitude, exif.gpsLongitudeRef ?? 'E');
+    if (latitude !== undefined && longitude !== undefined) {
+      record.location = {
+        latitude,
+        longitude,
+        ...(exif.gpsAltitude !== undefined && {
+          altitudeMeters:
+            exif.gpsAltitudeRef === 1 ? -rationalToNumber(exif.gpsAltitude) : rationalToNumber(exif.gpsAltitude),
+        }),
+      };
+    }
+  }
+
   if (exif.software !== undefined) record.software = exif.software;
 
   const fileDateTime = exif.dateTime ? exifDateToIso(exif.dateTime) : undefined;
@@ -120,6 +160,17 @@ export function sidecarToExif(sidecar: SidecarRecord): ExifData {
   if (sidecar.image?.width !== undefined) exif.pixelXDimension = sidecar.image.width;
   if (sidecar.image?.height !== undefined) exif.pixelYDimension = sidecar.image.height;
   if (sidecar.image?.orientation !== undefined) exif.orientation = sidecar.image.orientation;
+
+  if (sidecar.location !== undefined) {
+    exif.gpsLatitude = decimalToDms(sidecar.location.latitude);
+    exif.gpsLatitudeRef = sidecar.location.latitude < 0 ? 'S' : 'N';
+    exif.gpsLongitude = decimalToDms(sidecar.location.longitude);
+    exif.gpsLongitudeRef = sidecar.location.longitude < 0 ? 'W' : 'E';
+    if (sidecar.location.altitudeMeters !== undefined) {
+      exif.gpsAltitude = numberToRational(Math.abs(sidecar.location.altitudeMeters));
+      exif.gpsAltitudeRef = sidecar.location.altitudeMeters < 0 ? 1 : 0;
+    }
+  }
 
   if (sidecar.software !== undefined) exif.software = sidecar.software;
 

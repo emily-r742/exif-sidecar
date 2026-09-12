@@ -4,8 +4,10 @@ export interface Rational {
 }
 
 // Raw values as they come out of a TIFF/EXIF IFD entry, before any
-// unit conversion or renaming happens.
-export type TagValue = string | number | Rational;
+// unit conversion or renaming happens. GPS coordinates are the one
+// field stored as three RATIONALs (degrees, minutes, seconds) rather
+// than one, hence the array variant.
+export type TagValue = string | number | Rational | Rational[];
 
 // Subset of EXIF fields this library understands. Anything not listed
 // here is parsed but discarded — see README for what's missing.
@@ -24,6 +26,12 @@ export interface ExifData {
   lensModel?: string;
   pixelXDimension?: number;
   pixelYDimension?: number;
+  gpsLatitude?: Rational[]; // GPS IFD 0x0002: [degrees, minutes, seconds]
+  gpsLatitudeRef?: string; // GPS IFD 0x0001: "N" or "S"
+  gpsLongitude?: Rational[]; // GPS IFD 0x0004: [degrees, minutes, seconds]
+  gpsLongitudeRef?: string; // GPS IFD 0x0003: "E" or "W"
+  gpsAltitude?: Rational; // GPS IFD 0x0006, metres
+  gpsAltitudeRef?: number; // GPS IFD 0x0005: 0 = above sea level, 1 = below
 }
 
 // Human-readable, diffable stand-in for the fields above. Dates are
@@ -46,6 +54,11 @@ export interface SidecarRecord {
     width?: number;
     height?: number;
     orientation?: number;
+  };
+  location?: {
+    latitude: number; // decimal degrees, positive = north
+    longitude: number; // decimal degrees, positive = east
+    altitudeMeters?: number; // positive = above sea level
   };
   software?: string;
   fileDateTime?: string;

@@ -46,6 +46,67 @@ test('rationalToNumber treats a zero denominator as zero instead of dividing', (
   assert.equal(rationalToNumber({ numerator: 5, denominator: 0 }), 0);
 });
 
+test('exifToSidecar converts GPS DMS tags into decimal degrees', () => {
+  const exif: ExifData = {
+    gpsLatitudeRef: 'N',
+    gpsLatitude: [
+      { numerator: 40, denominator: 1 },
+      { numerator: 44, denominator: 1 },
+      { numerator: 3010, denominator: 100 },
+    ],
+    gpsLongitudeRef: 'W',
+    gpsLongitude: [
+      { numerator: 73, denominator: 1 },
+      { numerator: 59, denominator: 1 },
+      { numerator: 858, denominator: 100 },
+    ],
+    gpsAltitudeRef: 1,
+    gpsAltitude: { numerator: 15, denominator: 1 },
+  };
+
+  const sidecar = exifToSidecar(exif);
+  assert.ok(sidecar.location);
+  assert.ok(Math.abs(sidecar.location.latitude - 40.741694) < 1e-4);
+  assert.ok(Math.abs(sidecar.location.longitude - -73.985717) < 1e-4);
+  assert.equal(sidecar.location.altitudeMeters, -15);
+});
+
+test('exifToSidecar defaults to N/E when a hemisphere ref is missing', () => {
+  const exif: ExifData = {
+    gpsLatitude: [
+      { numerator: 40, denominator: 1 },
+      { numerator: 0, denominator: 1 },
+      { numerator: 0, denominator: 1 },
+    ],
+    gpsLongitude: [
+      { numerator: 73, denominator: 1 },
+      { numerator: 0, denominator: 1 },
+      { numerator: 0, denominator: 1 },
+    ],
+  };
+
+  assert.deepEqual(exifToSidecar(exif).location, { latitude: 40, longitude: 73 });
+});
+
+test('sidecarToExif converts decimal degrees back into GPS DMS tags and refs', () => {
+  const exif = sidecarToExif({ location: { latitude: -40.5, longitude: 73.25, altitudeMeters: -12 } });
+
+  assert.equal(exif.gpsLatitudeRef, 'S');
+  assert.deepEqual(exif.gpsLatitude, [
+    { numerator: 40, denominator: 1 },
+    { numerator: 30, denominator: 1 },
+    { numerator: 0, denominator: 1 },
+  ]);
+  assert.equal(exif.gpsLongitudeRef, 'E');
+  assert.deepEqual(exif.gpsLongitude, [
+    { numerator: 73, denominator: 1 },
+    { numerator: 15, denominator: 1 },
+    { numerator: 0, denominator: 1 },
+  ]);
+  assert.equal(exif.gpsAltitudeRef, 1);
+  assert.deepEqual(exif.gpsAltitude, { numerator: 12, denominator: 1 });
+});
+
 test('exifToSidecar returns an empty record for empty EXIF data', () => {
   assert.deepEqual(exifToSidecar({}), {});
 });

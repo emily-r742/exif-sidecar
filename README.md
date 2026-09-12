@@ -37,7 +37,8 @@ if (exif) {
   //     "iso": 400,
   //     "focalLengthMm": 50
   //   },
-  //   "image": { "width": 6000, "height": 4000, "orientation": 1 }
+  //   "image": { "width": 6000, "height": 4000, "orientation": 1 },
+  //   "location": { "latitude": 40.741694, "longitude": -73.985717, "altitudeMeters": 15 }
   // }
 
   // round trip back to EXIF-shaped field values
@@ -66,10 +67,9 @@ data.
 
 This is an early skeleton. Known gaps, in the order I plan to close
 them, are listed in the project roadmap (not checked into this repo
-yet — see commit history as it grows). Notably: GPS tags aren't parsed,
-there's no support for writing a sidecar back into a JPEG's APP1
-segment, and only the first IFD is read (no thumbnail IFD, no maker
-notes).
+yet — see commit history as it grows). Notably: there's no support for
+writing a sidecar back into a JPEG's APP1 segment, and only the first
+IFD and the GPS IFD are read (no thumbnail IFD, no maker notes).
 
 ## License
 

@@ -57,6 +57,25 @@ export function rationalEntry(
   return { tag, type: 5, count: 1, data };
 }
 
+export function byteEntry(tag: number, value: number): TiffEntry {
+  return { tag, type: 1, count: 1, data: new Uint8Array([value]) };
+}
+
+// GPS latitude/longitude each pack three RATIONALs (degrees, minutes,
+// seconds) into a single IFD entry.
+export function rationalArrayEntry(
+  tag: number,
+  values: Array<[number, number]>,
+  little: boolean,
+): TiffEntry {
+  const data = new Uint8Array(values.length * 8);
+  values.forEach(([numerator, denominator], i) => {
+    data.set(u32(numerator, little), i * 8);
+    data.set(u32(denominator, little), i * 8 + 4);
+  });
+  return { tag, type: 5, count: values.length, data };
+}
+
 // Encodes one IFD (header + inline entries + out-of-line entry data)
 // starting at `baseOffset` bytes from the start of the TIFF block.
 function encodeIfd(baseOffset: number, entries: TiffEntry[], little: boolean): Uint8Array {
@@ -87,11 +106,13 @@ function encodeIfd(baseOffset: number, entries: TiffEntry[], little: boolean): U
 
 // Builds a minimal JPEG (SOI, one APP1 "Exif\0\0" segment, EOI) whose
 // TIFF block holds `ifd0Entries` in IFD0 and, if given, `exifIfdEntries`
-// in the EXIF SubIFD pointed to from IFD0 tag 0x8769.
+// / `gpsIfdEntries` in the SubIFDs pointed to from IFD0 tags 0x8769 and
+// 0x8825.
 export function buildJpegWithExif(
   ifd0Entries: TiffEntry[],
   exifIfdEntries: TiffEntry[] = [],
   little = true,
+  gpsIfdEntries: TiffEntry[] = [],
 ): Uint8Array {
   const byteOrder = little ? [0x49, 0x49] : [0x4d, 0x4d];
   const tiffHeader = new Uint8Array(8);
@@ -101,24 +122,32 @@ export function buildJpegWithExif(
   headerView.setUint32(4, 8, little); // IFD0 starts right after this header
 
   const hasExifIfd = exifIfdEntries.length > 0;
-  // Size the pointer entry with a placeholder offset first: its data is
-  // always 4 inline bytes, so the placeholder doesn't change IFD0's size.
-  const sizingEntries = hasExifIfd ? [...ifd0Entries, longEntry(0x8769, 0, little)] : ifd0Entries;
+  const hasGpsIfd = gpsIfdEntries.length > 0;
+  // Size the pointer entries with placeholder offsets first: their data
+  // is always 4 inline bytes, so the placeholder doesn't change IFD0's
+  // size.
+  const pointerEntries: TiffEntry[] = [];
+  if (hasExifIfd) pointerEntries.push(longEntry(0x8769, 0, little));
+  if (hasGpsIfd) pointerEntries.push(longEntry(0x8825, 0, little));
+  const sizingEntries = [...ifd0Entries, ...pointerEntries];
   const ifd0Size =
     2 +
     sizingEntries.length * 12 +
     4 +
     ifd0Entries.reduce((sum, entry) => sum + (entry.data.length > 4 ? entry.data.length : 0), 0);
   const exifIfdOffset = 8 + ifd0Size;
+  const exifIfdBytes = hasExifIfd ? encodeIfd(exifIfdOffset, exifIfdEntries, little) : new Uint8Array(0);
+  const gpsIfdOffset = exifIfdOffset + exifIfdBytes.length;
+  const gpsIfdBytes = hasGpsIfd ? encodeIfd(gpsIfdOffset, gpsIfdEntries, little) : new Uint8Array(0);
 
-  const finalIfd0Entries = hasExifIfd
-    ? [...ifd0Entries, longEntry(0x8769, exifIfdOffset, little)]
-    : ifd0Entries;
+  const finalPointerEntries: TiffEntry[] = [];
+  if (hasExifIfd) finalPointerEntries.push(longEntry(0x8769, exifIfdOffset, little));
+  if (hasGpsIfd) finalPointerEntries.push(longEntry(0x8825, gpsIfdOffset, little));
+  const finalIfd0Entries = [...ifd0Entries, ...finalPointerEntries];
 
   const ifd0Bytes = encodeIfd(8, finalIfd0Entries, little);
-  const exifIfdBytes = hasExifIfd ? encodeIfd(exifIfdOffset, exifIfdEntries, little) : new Uint8Array(0);
 
-  const tiff = concatBytes([tiffHeader, ifd0Bytes, exifIfdBytes]);
+  const tiff = concatBytes([tiffHeader, ifd0Bytes, exifIfdBytes, gpsIfdBytes]);
   const exifHeader = new TextEncoder().encode('Exif\0\0');
   const app1Payload = concatBytes([exifHeader, tiff]);
   const app1Length = u16(app1Payload.length + 2, false); // JPEG lengths are always big-endian

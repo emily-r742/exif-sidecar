@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseJpegExif } from '../src/exif.js';
 import { exifToSidecar, sidecarToExif } from '../src/sidecar.js';
-import { asciiEntry, buildJpegWithExif, longEntry, rationalEntry, shortEntry } from './helpers.js';
+import { asciiEntry, buildJpegWithExif, byteEntry, longEntry, rationalArrayEntry, rationalEntry, shortEntry } from './helpers.js';
 
 // End-to-end: bytes -> ExifData -> SidecarRecord -> ExifData, checking
 // that nothing a sidecar can represent is lost along the way.
@@ -44,6 +44,42 @@ test('a JPEG parsed to a sidecar and back preserves every representable field', 
     software: 'Test 1.0',
     fileDateTime: '2026-03-11T14:22:05',
   });
+
+  const backToExif = sidecarToExif(sidecar);
+  assert.deepEqual(backToExif, parsed);
+});
+
+test('a JPEG with whole-degree GPS coordinates round-trips through a sidecar exactly', () => {
+  const gpsIfd = [
+    asciiEntry(0x0001, 'N'),
+    rationalArrayEntry(
+      0x0002,
+      [
+        [37, 1],
+        [0, 1],
+        [0, 1],
+      ],
+      true,
+    ),
+    asciiEntry(0x0003, 'W'),
+    rationalArrayEntry(
+      0x0004,
+      [
+        [122, 1],
+        [0, 1],
+        [0, 1],
+      ],
+      true,
+    ),
+    byteEntry(0x0005, 0),
+    rationalEntry(0x0006, 10, 1, true),
+  ];
+
+  const parsed = parseJpegExif(buildJpegWithExif([], [], true, gpsIfd));
+  assert.ok(parsed);
+
+  const sidecar = exifToSidecar(parsed);
+  assert.deepEqual(sidecar.location, { latitude: 37, longitude: -122, altitudeMeters: 10 });
 
   const backToExif = sidecarToExif(sidecar);
   assert.deepEqual(backToExif, parsed);

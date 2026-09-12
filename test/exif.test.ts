@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseJpegExif } from '../src/exif.js';
-import { asciiEntry, buildJpegWithExif, buildJpegWithoutExif, longEntry, rationalEntry, shortEntry } from './helpers.js';
+import {
+  asciiEntry,
+  buildJpegWithExif,
+  buildJpegWithoutExif,
+  byteEntry,
+  longEntry,
+  rationalArrayEntry,
+  rationalEntry,
+  shortEntry,
+} from './helpers.js';
 
 test('parseJpegExif returns null for bytes that are not a JPEG', () => {
   assert.equal(parseJpegExif(new Uint8Array([0, 1, 2, 3])), null);
@@ -65,4 +74,63 @@ test('parseJpegExif ignores an IFD0 with no EXIF SubIFD pointer', () => {
   assert.ok(exif);
   assert.equal(exif.make, 'Nikon');
   assert.equal(exif.exposureTime, undefined);
+});
+
+function sampleGpsIfd(little: boolean) {
+  return [
+    asciiEntry(0x0001, 'N'),
+    rationalArrayEntry(
+      0x0002,
+      [
+        [40, 1],
+        [44, 1],
+        [3010, 100],
+      ],
+      little,
+    ),
+    asciiEntry(0x0003, 'W'),
+    rationalArrayEntry(
+      0x0004,
+      [
+        [73, 1],
+        [59, 1],
+        [858, 100],
+      ],
+      little,
+    ),
+    byteEntry(0x0005, 0),
+    rationalEntry(0x0006, 15, 1, little),
+  ];
+}
+
+for (const little of [true, false]) {
+  test(`parseJpegExif reads GPS IFD tags (${little ? 'little' : 'big'}-endian)`, () => {
+    const jpeg = buildJpegWithExif(sampleIfd0(little), sampleExifIfd(little), little, sampleGpsIfd(little));
+    const exif = parseJpegExif(jpeg);
+
+    assert.ok(exif);
+    assert.equal(exif.gpsLatitudeRef, 'N');
+    assert.deepEqual(exif.gpsLatitude, [
+      { numerator: 40, denominator: 1 },
+      { numerator: 44, denominator: 1 },
+      { numerator: 3010, denominator: 100 },
+    ]);
+    assert.equal(exif.gpsLongitudeRef, 'W');
+    assert.deepEqual(exif.gpsLongitude, [
+      { numerator: 73, denominator: 1 },
+      { numerator: 59, denominator: 1 },
+      { numerator: 858, denominator: 100 },
+    ]);
+    assert.equal(exif.gpsAltitudeRef, 0);
+    assert.deepEqual(exif.gpsAltitude, { numerator: 15, denominator: 1 });
+  });
+}
+
+test('parseJpegExif leaves GPS fields undefined when IFD0 has no GPS IFD pointer', () => {
+  const jpeg = buildJpegWithExif(sampleIfd0(true), sampleExifIfd(true), true);
+  const exif = parseJpegExif(jpeg);
+
+  assert.ok(exif);
+  assert.equal(exif.gpsLatitude, undefined);
+  assert.equal(exif.gpsLongitude, undefined);
 });
