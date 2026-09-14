@@ -1,4 +1,5 @@
 export { parseJpegExif } from './exif.js';
+export { buildExifApp1Segment, embedJpegExif } from './embed.js';
 export {
   exifToSidecar,
   sidecarToExif,

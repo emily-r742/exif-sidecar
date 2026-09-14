@@ -125,11 +125,18 @@ function parseTiff(
   return { ifd0, exifIfd, gpsIfd };
 }
 
+// A located "Exif\0\0" APP1 segment within a JPEG's marker stream.
+export interface ExifSegment {
+  start: number; // offset of the segment's 0xff marker byte
+  end: number; // offset just past the segment (start of the next marker)
+  tiffStart: number; // offset where the TIFF block begins, inside the segment
+}
+
 // Walks JPEG markers looking for the APP1 segment that carries an
-// "Exif\0\0" header, and returns the offset where the TIFF block
-// inside it starts. Returns undefined if the file isn't a JPEG or
-// carries no EXIF APP1 segment.
-function findTiffStart(view: DataView): number | undefined {
+// "Exif\0\0" header. Returns undefined if the file isn't a JPEG or
+// carries no EXIF APP1 segment. Exported so embed.ts can find and
+// replace an existing segment instead of only reading from it.
+export function findExifSegment(view: DataView): ExifSegment | undefined {
   if (view.byteLength < 4 || view.getUint16(0, false) !== 0xffd8) return undefined;
 
   let offset = 2;
@@ -156,7 +163,7 @@ function findTiffStart(view: DataView): number | undefined {
         view.getUint8(headerStart + 3) === 0x66 && // f
         view.getUint8(headerStart + 4) === 0x00 &&
         view.getUint8(headerStart + 5) === 0x00;
-      if (isExifHeader) return headerStart + 6;
+      if (isExifHeader) return { start: offset, end: offset + 2 + length, tiffStart: headerStart + 6 };
     }
     offset += 2 + length;
   }
@@ -228,9 +235,9 @@ function buildExifData(
 // are responsible for getting file contents into memory first.
 export function parseJpegExif(bytes: Uint8Array): ExifData | null {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const tiffStart = findTiffStart(view);
-  if (tiffStart === undefined) return null;
+  const segment = findExifSegment(view);
+  if (!segment) return null;
 
-  const { ifd0, exifIfd, gpsIfd } = parseTiff(view, tiffStart);
+  const { ifd0, exifIfd, gpsIfd } = parseTiff(view, segment.tiffStart);
   return buildExifData(ifd0, exifIfd, gpsIfd);
 }

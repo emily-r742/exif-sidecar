@@ -20,7 +20,7 @@ There are two representations:
 
 ```ts
 import { readFileSync } from 'node:fs';
-import { parseJpegExif, exifToSidecar, sidecarToExif } from './src/index.js';
+import { parseJpegExif, exifToSidecar, sidecarToExif, embedJpegExif } from './src/index.js';
 
 const bytes = readFileSync('photo.jpg');
 const exif = parseJpegExif(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength));
@@ -43,6 +43,9 @@ if (exif) {
 
   // round trip back to EXIF-shaped field values
   const roundTripped = sidecarToExif(sidecar);
+
+  // and back into a JPEG APP1 segment, replacing whatever was there
+  const updatedBytes = embedJpegExif(new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength), roundTripped);
 }
 ```
 
@@ -65,11 +68,12 @@ data.
 
 ## Current limitations
 
-This is an early skeleton. Known gaps, in the order I plan to close
-them, are listed in the project roadmap (not checked into this repo
-yet — see commit history as it grows). Notably: there's no support for
-writing a sidecar back into a JPEG's APP1 segment, and only the first
-IFD and the GPS IFD are read (no thumbnail IFD, no maker notes).
+This is an early skeleton. `embedJpegExif` writes a fresh little-endian
+APP1 segment for exactly the fields `ExifData` models — it doesn't
+preserve any other EXIF tags, thumbnail IFD, or maker notes that might
+have existed in the source file's own APP1 segment, since none of that
+survives the read side either. Only IFD0, the Exif SubIFD, and the GPS
+IFD are read; there's no thumbnail IFD or maker note support yet.
 
 ## License
 
